@@ -1,34 +1,84 @@
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Info, Smartphone, Cpu, HardDrive, Wifi, Battery } from 'lucide-react';
+import { Device } from '@capacitor/device';
 
 const SystemInfo = () => {
-  const systemData = {
-    device: {
-      model: 'iPhone 15 Pro',
-      os: 'iOS 17.1',
-      version: '21B74',
-      storage: '256 GB'
-    },
-    hardware: {
-      processor: 'A17 Pro',
-      cores: navigator.hardwareConcurrency || 6,
-      memory: '8 GB',
-      gpu: 'A17 Pro GPU'
-    },
-    network: {
-      type: 'WiFi',
-      strength: 'Excellent',
-      ip: '192.168.1.100'
-    },
-    battery: {
-      level: '87%',
-      status: 'Not Charging',
-      health: 'Good'
-    }
-  };
+  const [deviceInfo, setDeviceInfo] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const getDeviceInfo = async () => {
+      try {
+        const info = await Device.getInfo();
+        const batteryInfo = await Device.getBatteryInfo();
+        
+        setDeviceInfo({
+          device: {
+            model: info.model || 'Unknown',
+            os: `${info.operatingSystem} ${info.osVersion}`,
+            version: info.osVersion || 'Unknown',
+            platform: info.platform,
+            manufacturer: info.manufacturer || 'Apple',
+            isVirtual: info.isVirtual
+          },
+          battery: {
+            level: `${Math.round((batteryInfo.batteryLevel || 0) * 100)}%`,
+            status: batteryInfo.isCharging ? 'Charging' : 'Not Charging',
+            health: 'Good' // iOS doesn't expose battery health via Capacitor
+          }
+        });
+      } catch (error) {
+        console.error('Error getting device info:', error);
+        // Fallback to basic info
+        setDeviceInfo({
+          device: {
+            model: 'Unknown Device',
+            os: 'iOS',
+            version: 'Unknown',
+            platform: 'ios',
+            manufacturer: 'Apple',
+            isVirtual: false
+          },
+          battery: {
+            level: 'Unknown',
+            status: 'Unknown',
+            health: 'Unknown'
+          }
+        });
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    getDeviceInfo();
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="space-y-4">
+        <Card className="shadow-lg border-0 bg-white/80 backdrop-blur-sm">
+          <CardContent className="p-6">
+            <div className="text-center">Loading device information...</div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (!deviceInfo) {
+    return (
+      <div className="space-y-4">
+        <Card className="shadow-lg border-0 bg-white/80 backdrop-blur-sm">
+          <CardContent className="p-6">
+            <div className="text-center text-red-500">Failed to load device information</div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -44,25 +94,29 @@ const SystemInfo = () => {
             <div className="space-y-3">
               <div className="flex justify-between items-center">
                 <span className="text-gray-600">Model:</span>
-                <Badge variant="outline">{systemData.device.model}</Badge>
+                <Badge variant="outline">{deviceInfo.device.model}</Badge>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-gray-600">OS Version:</span>
-                <span className="font-medium">{systemData.device.os}</span>
+                <span className="font-medium">{deviceInfo.device.os}</span>
               </div>
               <div className="flex justify-between items-center">
-                <span className="text-gray-600">Build:</span>
-                <span className="font-medium">{systemData.device.version}</span>
+                <span className="text-gray-600">Platform:</span>
+                <span className="font-medium">{deviceInfo.device.platform}</span>
               </div>
             </div>
             <div className="space-y-3">
               <div className="flex justify-between items-center">
-                <span className="text-gray-600">Storage:</span>
-                <span className="font-medium">{systemData.device.storage}</span>
+                <span className="text-gray-600">Manufacturer:</span>
+                <span className="font-medium">{deviceInfo.device.manufacturer}</span>
               </div>
               <div className="flex justify-between items-center">
-                <span className="text-gray-600">Memory:</span>
-                <span className="font-medium">{systemData.hardware.memory}</span>
+                <span className="text-gray-600">Device Type:</span>
+                <span className="font-medium">{deviceInfo.device.isVirtual ? 'Simulator' : 'Physical Device'}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-gray-600">CPU Cores:</span>
+                <span className="font-medium">{navigator.hardwareConcurrency || 'Unknown'}</span>
               </div>
             </div>
           </div>
@@ -80,75 +134,50 @@ const SystemInfo = () => {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-3">
               <div className="flex justify-between items-center">
-                <span className="text-gray-600">Processor:</span>
-                <Badge variant="outline">{systemData.hardware.processor}</Badge>
+                <span className="text-gray-600">Platform:</span>
+                <Badge variant="outline">{deviceInfo.device.platform}</Badge>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-gray-600">CPU Cores:</span>
-                <span className="font-medium">{systemData.hardware.cores}</span>
+                <span className="font-medium">{navigator.hardwareConcurrency || 'Unknown'}</span>
               </div>
             </div>
             <div className="space-y-3">
               <div className="flex justify-between items-center">
-                <span className="text-gray-600">Graphics:</span>
-                <span className="font-medium">{systemData.hardware.gpu}</span>
+                <span className="text-gray-600">Memory:</span>
+                <span className="font-medium">{(navigator as any).deviceMemory ? `${(navigator as any).deviceMemory} GB` : 'Unknown'}</span>
               </div>
               <div className="flex justify-between items-center">
-                <span className="text-gray-600">RAM:</span>
-                <span className="font-medium">{systemData.hardware.memory}</span>
+                <span className="text-gray-600">Connection:</span>
+                <span className="font-medium">{(navigator as any).connection?.effectiveType || 'Unknown'}</span>
               </div>
             </div>
           </div>
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Card className="shadow-lg border-0 bg-white/80 backdrop-blur-sm">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Wifi className="w-5 h-5 text-purple-500" />
-              Network Status
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="flex justify-between items-center">
-              <span className="text-gray-600">Connection:</span>
-              <Badge variant="outline">{systemData.network.type}</Badge>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-gray-600">Signal:</span>
-              <Badge className="bg-green-500">{systemData.network.strength}</Badge>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-gray-600">IP Address:</span>
-              <span className="font-medium text-sm">{systemData.network.ip}</span>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="shadow-lg border-0 bg-white/80 backdrop-blur-sm">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Battery className="w-5 h-5 text-orange-500" />
-              Battery Status
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="flex justify-between items-center">
-              <span className="text-gray-600">Level:</span>
-              <Badge className="bg-green-500">{systemData.battery.level}</Badge>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-gray-600">Status:</span>
-              <span className="font-medium">{systemData.battery.status}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-gray-600">Health:</span>
-              <Badge variant="outline">{systemData.battery.health}</Badge>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      <Card className="shadow-lg border-0 bg-white/80 backdrop-blur-sm">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Battery className="w-5 h-5 text-orange-500" />
+            Battery Status
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex justify-between items-center">
+            <span className="text-gray-600">Level:</span>
+            <Badge className="bg-green-500">{deviceInfo.battery.level}</Badge>
+          </div>
+          <div className="flex justify-between items-center">
+            <span className="text-gray-600">Status:</span>
+            <span className="font-medium">{deviceInfo.battery.status}</span>
+          </div>
+          <div className="flex justify-between items-center">
+            <span className="text-gray-600">Health:</span>
+            <Badge variant="outline">{deviceInfo.battery.health}</Badge>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 };

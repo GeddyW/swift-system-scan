@@ -9,6 +9,7 @@ import { Activity, Cpu, HardDrive, Smartphone, Play, RefreshCw } from 'lucide-re
 import DiagnosticsCard from '@/components/DiagnosticsCard';
 import SystemInfo from '@/components/SystemInfo';
 import PerformanceChart from '@/components/PerformanceChart';
+import { Device } from '@capacitor/device';
 
 const Index = () => {
   const [cpuUsage, setCpuUsage] = useState(0);
@@ -16,6 +17,28 @@ const Index = () => {
   const [isRunningTest, setIsRunningTest] = useState(false);
   const [testResults, setTestResults] = useState<any>(null);
   const [performanceHistory, setPerformanceHistory] = useState<any[]>([]);
+  const [deviceInfo, setDeviceInfo] = useState<any>(null);
+  const [batteryLevel, setBatteryLevel] = useState(0);
+
+  // Get real device info on component mount
+  useEffect(() => {
+    const getDeviceInfo = async () => {
+      try {
+        const info = await Device.getInfo();
+        const batteryInfo = await Device.getBatteryInfo();
+        
+        setDeviceInfo(info);
+        setBatteryLevel(Math.round((batteryInfo.batteryLevel || 0) * 100));
+        
+        console.log('Device Info:', info);
+        console.log('Battery Info:', batteryInfo);
+      } catch (error) {
+        console.error('Error getting device info:', error);
+      }
+    };
+
+    getDeviceInfo();
+  }, []);
 
   // Simulate real-time system monitoring
   useEffect(() => {
@@ -51,31 +74,74 @@ const Index = () => {
     // Simulate diagnostic tests
     await new Promise(resolve => setTimeout(resolve, 3000));
 
-    const results = {
-      overall: Math.random() > 0.2 ? 'excellent' : 'good',
-      cpu: {
-        temperature: Math.floor(Math.random() * 20) + 35, // 35-55°C
-        cores: navigator.hardwareConcurrency || 4,
-        usage: cpuUsage,
-        status: cpuUsage < 50 ? 'optimal' : 'moderate'
-      },
-      memory: {
-        total: '8 GB',
-        used: `${Math.floor(ramUsage * 8 / 100 * 10) / 10} GB`,
-        available: `${Math.floor((100 - ramUsage) * 8 / 100 * 10) / 10} GB`,
-        usage: ramUsage,
-        status: ramUsage < 60 ? 'good' : 'high'
-      },
-      storage: {
-        total: '256 GB',
-        used: '128 GB',
-        available: '128 GB',
-        status: 'healthy'
-      }
-    };
+    // Get fresh device info for diagnostics
+    try {
+      const info = await Device.getInfo();
+      const batteryInfo = await Device.getBatteryInfo();
+      
+      const results = {
+        overall: Math.random() > 0.2 ? 'excellent' : 'good',
+        device: {
+          model: info.model || 'Unknown',
+          os: `${info.operatingSystem} ${info.osVersion}`,
+          platform: info.platform,
+          manufacturer: info.manufacturer || 'Apple'
+        },
+        cpu: {
+          temperature: Math.floor(Math.random() * 20) + 35, // 35-55°C
+          cores: navigator.hardwareConcurrency || 'Unknown',
+          usage: cpuUsage,
+          status: cpuUsage < 50 ? 'optimal' : 'moderate'
+        },
+        memory: {
+          total: (navigator as any).deviceMemory ? `${(navigator as any).deviceMemory} GB` : 'Unknown',
+          used: `${Math.floor(ramUsage * 8 / 100 * 10) / 10} GB`,
+          available: `${Math.floor((100 - ramUsage) * 8 / 100 * 10) / 10} GB`,
+          usage: ramUsage,
+          status: ramUsage < 60 ? 'good' : 'high'
+        },
+        battery: {
+          level: Math.round((batteryInfo.batteryLevel || 0) * 100),
+          isCharging: batteryInfo.isCharging,
+          status: batteryInfo.isCharging ? 'Charging' : 'Not Charging'
+        },
+        storage: {
+          total: 'Unknown', // iOS doesn't expose storage info via Capacitor
+          used: 'Unknown',
+          available: 'Unknown',
+          status: 'Unknown'
+        }
+      };
 
-    setTestResults(results);
+      setTestResults(results);
+      console.log('Diagnostic Results:', results);
+    } catch (error) {
+      console.error('Error during diagnostics:', error);
+    }
+
     setIsRunningTest(false);
+  };
+
+  const getDeviceStatus = () => {
+    if (!deviceInfo) return 'Unknown';
+    
+    // Simple health check based on available data
+    if (batteryLevel > 80 && cpuUsage < 50 && ramUsage < 70) {
+      return 'Excellent';
+    } else if (batteryLevel > 50 && cpuUsage < 70 && ramUsage < 80) {
+      return 'Good';
+    } else {
+      return 'Fair';
+    }
+  };
+
+  const getDeviceStatusLevel = () => {
+    const status = getDeviceStatus();
+    switch (status) {
+      case 'Excellent': return 'excellent';
+      case 'Good': return 'good';
+      default: return 'moderate';
+    }
   };
 
   return (
@@ -92,6 +158,11 @@ const Index = () => {
             </h1>
           </div>
           <p className="text-gray-600">Monitor your device performance and run system diagnostics</p>
+          {deviceInfo && (
+            <p className="text-sm text-gray-500">
+              Scanning: {deviceInfo.model || 'Unknown Device'} • {deviceInfo.operatingSystem} {deviceInfo.osVersion}
+            </p>
+          )}
         </div>
 
         {/* Quick Stats */}
@@ -112,10 +183,10 @@ const Index = () => {
           />
           <DiagnosticsCard
             title="Device Status"
-            value="Healthy"
-            progress={85}
+            value={getDeviceStatus()}
+            progress={batteryLevel}
             icon={<Smartphone className="w-5 h-5" />}
-            status="excellent"
+            status={getDeviceStatusLevel()}
           />
         </div>
 
@@ -169,42 +240,42 @@ const Index = () => {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <Card>
                         <CardHeader className="pb-2">
-                          <CardTitle className="text-sm font-medium">CPU Performance</CardTitle>
+                          <CardTitle className="text-sm font-medium">Device Information</CardTitle>
                         </CardHeader>
                         <CardContent className="space-y-2">
                           <div className="flex justify-between text-sm">
-                            <span>Temperature:</span>
-                            <span>{testResults.cpu.temperature}°C</span>
+                            <span>Model:</span>
+                            <span>{testResults.device.model}</span>
                           </div>
                           <div className="flex justify-between text-sm">
-                            <span>Cores:</span>
-                            <span>{testResults.cpu.cores}</span>
+                            <span>OS:</span>
+                            <span>{testResults.device.os}</span>
                           </div>
                           <div className="flex justify-between text-sm">
-                            <span>Status:</span>
-                            <Badge variant="outline" className="text-xs">
-                              {testResults.cpu.status}
-                            </Badge>
+                            <span>Platform:</span>
+                            <span>{testResults.device.platform}</span>
                           </div>
                         </CardContent>
                       </Card>
 
                       <Card>
                         <CardHeader className="pb-2">
-                          <CardTitle className="text-sm font-medium">Memory Analysis</CardTitle>
+                          <CardTitle className="text-sm font-medium">Battery Analysis</CardTitle>
                         </CardHeader>
                         <CardContent className="space-y-2">
                           <div className="flex justify-between text-sm">
-                            <span>Total:</span>
-                            <span>{testResults.memory.total}</span>
+                            <span>Level:</span>
+                            <span>{testResults.battery.level}%</span>
                           </div>
                           <div className="flex justify-between text-sm">
-                            <span>Used:</span>
-                            <span>{testResults.memory.used}</span>
+                            <span>Status:</span>
+                            <span>{testResults.battery.status}</span>
                           </div>
                           <div className="flex justify-between text-sm">
-                            <span>Available:</span>
-                            <span>{testResults.memory.available}</span>
+                            <span>Charging:</span>
+                            <Badge variant="outline" className="text-xs">
+                              {testResults.battery.isCharging ? 'Yes' : 'No'}
+                            </Badge>
                           </div>
                         </CardContent>
                       </Card>
