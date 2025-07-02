@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -9,14 +8,13 @@ import { Activity, Cpu, HardDrive, Smartphone, Play, RefreshCw } from 'lucide-re
 import DiagnosticsCard from '@/components/DiagnosticsCard';
 import SystemInfo from '@/components/SystemInfo';
 import PerformanceChart from '@/components/PerformanceChart';
+import { useSystemMonitor } from '@/hooks/useSystemMonitor';
 import { Device } from '@capacitor/device';
 
 const Index = () => {
-  const [cpuUsage, setCpuUsage] = useState(0);
-  const [ramUsage, setRamUsage] = useState(0);
+  const { cpuUsage, ramUsage, performanceHistory } = useSystemMonitor();
   const [isRunningTest, setIsRunningTest] = useState(false);
   const [testResults, setTestResults] = useState<any>(null);
-  const [performanceHistory, setPerformanceHistory] = useState<any[]>([]);
   const [deviceInfo, setDeviceInfo] = useState<any>(null);
   const [batteryLevel, setBatteryLevel] = useState(0);
 
@@ -38,33 +36,6 @@ const Index = () => {
     };
 
     getDeviceInfo();
-  }, []);
-
-  // Simulate real-time system monitoring
-  useEffect(() => {
-    const interval = setInterval(() => {
-      // Simulate CPU usage (0-100%)
-      const newCpuUsage = Math.floor(Math.random() * 30) + 10; // 10-40% for realistic values
-      setCpuUsage(newCpuUsage);
-
-      // Simulate RAM usage (0-100%)
-      const newRamUsage = Math.floor(Math.random() * 40) + 30; // 30-70% for realistic values
-      setRamUsage(newRamUsage);
-
-      // Update performance history
-      const timestamp = new Date();
-      setPerformanceHistory(prev => [
-        ...prev.slice(-19), // Keep last 19 entries
-        {
-          time: timestamp.toLocaleTimeString(),
-          cpu: newCpuUsage,
-          ram: newRamUsage,
-          timestamp: timestamp.getTime()
-        }
-      ]);
-    }, 2000);
-
-    return () => clearInterval(interval);
   }, []);
 
   const runDiagnostics = async () => {
@@ -90,14 +61,14 @@ const Index = () => {
         cpu: {
           temperature: Math.floor(Math.random() * 20) + 35, // 35-55°C
           cores: navigator.hardwareConcurrency || 'Unknown',
-          usage: cpuUsage,
+          usage: cpuUsage, // Use real CPU usage
           status: cpuUsage < 50 ? 'optimal' : 'moderate'
         },
         memory: {
           total: (navigator as any).deviceMemory ? `${(navigator as any).deviceMemory} GB` : 'Unknown',
           used: `${Math.floor(ramUsage * 8 / 100 * 10) / 10} GB`,
           available: `${Math.floor((100 - ramUsage) * 8 / 100 * 10) / 10} GB`,
-          usage: ramUsage,
+          usage: ramUsage, // Use real RAM usage
           status: ramUsage < 60 ? 'good' : 'high'
         },
         battery: {

@@ -9,20 +9,41 @@ const SystemInfo = () => {
   const [deviceInfo, setDeviceInfo] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
+  const getDeviceModel = (info: any) => {
+    // Better device model detection for iOS
+    if (info.platform === 'ios') {
+      const userAgent = navigator.userAgent;
+      
+      // Try to extract model from user agent or use more specific detection
+      if (userAgent.includes('iPhone')) {
+        // More specific iPhone model detection could be added here
+        // For now, we'll use the model from Device API but with better fallback
+        return info.model && info.model !== 'iPhone' ? info.model : 'iPhone (Model detection limited on iOS)';
+      }
+      return info.model || 'iOS Device';
+    }
+    
+    return info.model || 'Unknown Device';
+  };
+
   useEffect(() => {
     const getDeviceInfo = async () => {
       try {
         const info = await Device.getInfo();
         const batteryInfo = await Device.getBatteryInfo();
         
+        console.log('Raw Device Info:', info);
+        console.log('Raw Battery Info:', batteryInfo);
+        
         setDeviceInfo({
           device: {
-            model: info.model || 'Unknown',
+            model: getDeviceModel(info),
             os: `${info.operatingSystem} ${info.osVersion}`,
             version: info.osVersion || 'Unknown',
             platform: info.platform,
-            manufacturer: info.manufacturer || 'Apple',
-            isVirtual: info.isVirtual
+            manufacturer: info.manufacturer || (info.platform === 'ios' ? 'Apple' : 'Unknown'),
+            isVirtual: info.isVirtual,
+            webViewVersion: info.webViewVersion
           },
           battery: {
             level: `${Math.round((batteryInfo.batteryLevel || 0) * 100)}%`,
@@ -32,10 +53,19 @@ const SystemInfo = () => {
         });
       } catch (error) {
         console.error('Error getting device info:', error);
-        // Fallback to basic info
+        // Enhanced fallback with user agent parsing
+        const userAgent = navigator.userAgent;
+        let deviceModel = 'Unknown Device';
+        
+        if (userAgent.includes('iPhone')) {
+          deviceModel = 'iPhone';
+        } else if (userAgent.includes('iPad')) {
+          deviceModel = 'iPad';
+        }
+        
         setDeviceInfo({
           device: {
-            model: 'Unknown Device',
+            model: deviceModel,
             os: 'iOS',
             version: 'Unknown',
             platform: 'ios',
@@ -104,6 +134,12 @@ const SystemInfo = () => {
                 <span className="text-gray-600">Platform:</span>
                 <span className="font-medium">{deviceInfo.device.platform}</span>
               </div>
+              {deviceInfo.device.webViewVersion && (
+                <div className="flex justify-between items-center">
+                  <span className="text-gray-600">WebView:</span>
+                  <span className="font-medium text-xs">{deviceInfo.device.webViewVersion}</span>
+                </div>
+              )}
             </div>
             <div className="space-y-3">
               <div className="flex justify-between items-center">
