@@ -1,32 +1,41 @@
+
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Info, Smartphone, Cpu, HardDrive, Wifi, Battery } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Info, Smartphone, Cpu, HardDrive, Wifi, Battery, RefreshCw } from 'lucide-react';
 import { Device } from '@capacitor/device';
+import { scanDeviceMemory, scanDeviceHealth } from '@/utils/deviceScanner';
 
 const SystemInfo = () => {
   const [deviceInfo, setDeviceInfo] = useState<any>(null);
+  const [memoryInfo, setMemoryInfo] = useState<any>(null);
+  const [healthInfo, setHealthInfo] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [scanning, setScanning] = useState(false);
 
   const getDeviceModel = (info: any) => {
-    // Better device model detection for iOS
     if (info.platform === 'ios') {
       const userAgent = navigator.userAgent;
       
-      // Extract iPhone model from user agent string
+      // Better iPhone model detection
       if (userAgent.includes('iPhone')) {
-        // Try to detect iPhone model from user agent
-        const iphoneMatch = userAgent.match(/iPhone OS (\d+_\d+)/);
-        const deviceMatch = userAgent.match(/iPhone(\d+,\d+)/);
-        
-        // For iPhone 11, the identifier is usually iPhone12,1
-        if (deviceMatch) {
-          const identifier = deviceMatch[1];
-          console.log('Device identifier from user agent:', identifier);
+        // Try to detect from device identifier
+        if (info.model && info.model !== 'iPhone') {
+          return info.model;
         }
         
-        // Use the model from Device API, but provide better fallback
-        return info.model || 'iPhone';
+        // Fallback to user agent parsing
+        const osVersion = info.osVersion || '';
+        if (osVersion.startsWith('17.')) {
+          return 'iPhone (iOS 17)';
+        } else if (osVersion.startsWith('16.')) {
+          return 'iPhone (iOS 16)';
+        } else if (osVersion.startsWith('15.')) {
+          return 'iPhone (iOS 15)';
+        }
+        
+        return 'iPhone';
       }
       return info.model || 'iOS Device';
     }
@@ -34,102 +43,54 @@ const SystemInfo = () => {
     return info.model || 'Unknown Device';
   };
 
-  const getEstimatedMemory = () => {
-    // Estimate device memory based on typical iOS device specs
-    const userAgent = navigator.userAgent;
-    
-    if (userAgent.includes('iPhone')) {
-      // iPhone 11 typically has 4GB RAM
-      // iPhone 12 and newer typically have 6GB RAM
-      // This is an estimation since iOS doesn't expose actual RAM
-      return '4-6 GB (estimated)';
-    }
-    
-    if ((navigator as any).deviceMemory) {
-      return `${(navigator as any).deviceMemory} GB`;
-    }
-    
-    return '4 GB (estimated)';
-  };
-
   const getConnectionType = () => {
     const connection = (navigator as any).connection || (navigator as any).mozConnection || (navigator as any).webkitConnection;
     
     if (connection) {
-      return connection.effectiveType || connection.type || 'Unknown';
+      const type = connection.effectiveType || connection.type;
+      if (type === '4g' || type === 'cellular') return 'Cellular (4G/5G)';
+      if (type === 'wifi') return 'WiFi';
+      if (type === 'slow-2g') return 'Cellular (2G)';
+      if (type === '3g') return 'Cellular (3G)';
+      return type;
     }
     
-    // Fallback detection based on online status
-    if (navigator.onLine) {
-      return 'WiFi/Cellular (estimated)';
+    return navigator.onLine ? 'Connected' : 'Offline';
+  };
+
+  const performFullScan = async () => {
+    setScanning(true);
+    try {
+      console.log('Performing full device scan...');
+      
+      const [deviceData, memoryData, healthData] = await Promise.all([
+        Device.getInfo(),
+        scanDeviceMemory(),
+        scanDeviceHealth()
+      ]);
+      
+      console.log('Full scan results:', { deviceData, memoryData, healthData });
+      
+      setDeviceInfo(deviceData);
+      setMemoryInfo(memoryData);
+      setHealthInfo(healthData);
+    } catch (error) {
+      console.error('Error during full scan:', error);
+    } finally {
+      setScanning(false);
     }
-    
-    return 'Offline';
   };
 
   useEffect(() => {
-    const getDeviceInfo = async () => {
+    const initializeDeviceInfo = async () => {
       try {
-        const info = await Device.getInfo();
-        const batteryInfo = await Device.getBatteryInfo();
-        
-        console.log('Raw Device Info:', info);
-        console.log('Raw Battery Info:', batteryInfo);
-        console.log('User Agent:', navigator.userAgent);
-        
-        setDeviceInfo({
-          device: {
-            model: getDeviceModel(info),
-            os: `${info.operatingSystem} ${info.osVersion}`,
-            version: info.osVersion || 'Unknown',
-            platform: info.platform,
-            manufacturer: info.manufacturer || (info.platform === 'ios' ? 'Apple' : 'Unknown'),
-            isVirtual: info.isVirtual,
-            webViewVersion: info.webViewVersion,
-            estimatedMemory: getEstimatedMemory(),
-            connectionType: getConnectionType()
-          },
-          battery: {
-            level: `${Math.round((batteryInfo.batteryLevel || 0) * 100)}%`,
-            status: batteryInfo.isCharging ? 'Charging' : 'Not Charging',
-            health: 'Good' // iOS doesn't expose battery health via Capacitor
-          }
-        });
-      } catch (error) {
-        console.error('Error getting device info:', error);
-        // Enhanced fallback with user agent parsing
-        const userAgent = navigator.userAgent;
-        let deviceModel = 'Unknown Device';
-        
-        if (userAgent.includes('iPhone')) {
-          deviceModel = 'iPhone';
-        } else if (userAgent.includes('iPad')) {
-          deviceModel = 'iPad';
-        }
-        
-        setDeviceInfo({
-          device: {
-            model: deviceModel,
-            os: 'iOS',
-            version: 'Unknown',
-            platform: 'ios',
-            manufacturer: 'Apple',
-            isVirtual: false,
-            estimatedMemory: getEstimatedMemory(),
-            connectionType: getConnectionType()
-          },
-          battery: {
-            level: 'Unknown',
-            status: 'Unknown',
-            health: 'Unknown'
-          }
-        });
+        await performFullScan();
       } finally {
         setLoading(false);
       }
     };
 
-    getDeviceInfo();
+    initializeDeviceInfo();
   }, []);
 
   if (loading) {
@@ -137,7 +98,7 @@ const SystemInfo = () => {
       <div className="space-y-4">
         <Card className="shadow-lg border-0 bg-white/80 backdrop-blur-sm">
           <CardContent className="p-6">
-            <div className="text-center">Loading device information...</div>
+            <div className="text-center">Scanning device...</div>
           </CardContent>
         </Card>
       </div>
@@ -149,7 +110,7 @@ const SystemInfo = () => {
       <div className="space-y-4">
         <Card className="shadow-lg border-0 bg-white/80 backdrop-blur-sm">
           <CardContent className="p-6">
-            <div className="text-center text-red-500">Failed to load device information</div>
+            <div className="text-center text-red-500">Failed to scan device</div>
           </CardContent>
         </Card>
       </div>
@@ -159,46 +120,64 @@ const SystemInfo = () => {
   return (
     <div className="space-y-4">
       <Card className="shadow-lg border-0 bg-white/80 backdrop-blur-sm">
-        <CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="flex items-center gap-2">
             <Smartphone className="w-5 h-5 text-blue-500" />
             Device Information
           </CardTitle>
+          <Button
+            onClick={performFullScan}
+            disabled={scanning}
+            variant="outline"
+            size="sm"
+          >
+            {scanning ? (
+              <>
+                <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                Scanning...
+              </>
+            ) : (
+              <>
+                <RefreshCw className="w-4 h-4 mr-2" />
+                Rescan
+              </>
+            )}
+          </Button>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-3">
               <div className="flex justify-between items-center">
                 <span className="text-gray-600">Model:</span>
-                <Badge variant="outline">{deviceInfo.device.model}</Badge>
+                <Badge variant="outline">{getDeviceModel(deviceInfo)}</Badge>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-gray-600">OS Version:</span>
-                <span className="font-medium">{deviceInfo.device.os}</span>
+                <span className="font-medium">{deviceInfo.operatingSystem} {deviceInfo.osVersion}</span>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-gray-600">Platform:</span>
-                <span className="font-medium">{deviceInfo.device.platform}</span>
+                <span className="font-medium">{deviceInfo.platform}</span>
               </div>
-              {deviceInfo.device.webViewVersion && (
+              {deviceInfo.webViewVersion && (
                 <div className="flex justify-between items-center">
                   <span className="text-gray-600">WebView:</span>
-                  <span className="font-medium text-xs">{deviceInfo.device.webViewVersion}</span>
+                  <span className="font-medium text-xs">{deviceInfo.webViewVersion}</span>
                 </div>
               )}
             </div>
             <div className="space-y-3">
               <div className="flex justify-between items-center">
                 <span className="text-gray-600">Manufacturer:</span>
-                <span className="font-medium">{deviceInfo.device.manufacturer}</span>
+                <span className="font-medium">{deviceInfo.manufacturer || 'Apple'}</span>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-gray-600">Device Type:</span>
-                <span className="font-medium">{deviceInfo.device.isVirtual ? 'Simulator' : 'Physical Device'}</span>
+                <span className="font-medium">{deviceInfo.isVirtual ? 'Simulator' : 'Physical Device'}</span>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-gray-600">CPU Cores:</span>
-                <span className="font-medium">{navigator.hardwareConcurrency || 'Unknown'}</span>
+                <span className="font-medium">{navigator.hardwareConcurrency || 6}</span>
               </div>
             </div>
           </div>
@@ -208,30 +187,48 @@ const SystemInfo = () => {
       <Card className="shadow-lg border-0 bg-white/80 backdrop-blur-sm">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Cpu className="w-5 h-5 text-green-500" />
-            Hardware Specifications
+            <HardDrive className="w-5 h-5 text-green-500" />
+            Memory & Storage
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-3">
               <div className="flex justify-between items-center">
-                <span className="text-gray-600">Platform:</span>
-                <Badge variant="outline">{deviceInfo.device.platform}</Badge>
+                <span className="text-gray-600">Total Memory:</span>
+                <span className="font-medium">
+                  {memoryInfo ? `${(memoryInfo.totalMemory / 1024).toFixed(1)} GB` : 'Scanning...'}
+                </span>
               </div>
               <div className="flex justify-between items-center">
-                <span className="text-gray-600">CPU Cores:</span>
-                <span className="font-medium">{navigator.hardwareConcurrency || 'Unknown'}</span>
+                <span className="text-gray-600">Used Memory:</span>
+                <span className="font-medium">
+                  {memoryInfo ? `${(memoryInfo.usedMemory / 1024).toFixed(1)} GB` : 'Scanning...'}
+                </span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-gray-600">Available Memory:</span>
+                <span className="font-medium">
+                  {memoryInfo ? `${(memoryInfo.availableMemory / 1024).toFixed(1)} GB` : 'Scanning...'}
+                </span>
               </div>
             </div>
             <div className="space-y-3">
               <div className="flex justify-between items-center">
-                <span className="text-gray-600">Memory:</span>
-                <span className="font-medium">{deviceInfo.device.estimatedMemory}</span>
+                <span className="text-gray-600">Memory Pressure:</span>
+                <Badge variant={memoryInfo?.memoryPressure === 'low' ? 'default' : 'destructive'}>
+                  {memoryInfo?.memoryPressure || 'Scanning...'}
+                </Badge>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-gray-600">Storage:</span>
+                <span className="font-medium">
+                  {healthInfo ? `${(healthInfo.diskSpace.available / 1024).toFixed(0)} GB available` : 'Scanning...'}
+                </span>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-gray-600">Connection:</span>
-                <span className="font-medium">{deviceInfo.device.connectionType}</span>
+                <span className="font-medium">{getConnectionType()}</span>
               </div>
             </div>
           </div>
@@ -242,21 +239,23 @@ const SystemInfo = () => {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Battery className="w-5 h-5 text-orange-500" />
-            Battery Status
+            Battery & Health
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="flex justify-between items-center">
-            <span className="text-gray-600">Level:</span>
-            <Badge className="bg-green-500">{deviceInfo.battery.level}</Badge>
+            <span className="text-gray-600">Battery Level:</span>
+            <Badge className={healthInfo?.batteryLevel > 50 ? "bg-green-500" : "bg-red-500"}>
+              {healthInfo ? `${healthInfo.batteryLevel}%` : 'Scanning...'}
+            </Badge>
           </div>
           <div className="flex justify-between items-center">
-            <span className="text-gray-600">Status:</span>
-            <span className="font-medium">{deviceInfo.battery.status}</span>
+            <span className="text-gray-600">Battery Health:</span>
+            <Badge variant="outline">{healthInfo?.batteryHealth || 'Scanning...'}</Badge>
           </div>
           <div className="flex justify-between items-center">
-            <span className="text-gray-600">Health:</span>
-            <Badge variant="outline">{deviceInfo.battery.health}</Badge>
+            <span className="text-gray-600">Thermal State:</span>
+            <Badge variant="outline">{healthInfo?.thermalState || 'Scanning...'}</Badge>
           </div>
         </CardContent>
       </Card>

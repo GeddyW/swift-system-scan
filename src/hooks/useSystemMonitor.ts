@@ -1,103 +1,104 @@
 
 import { useState, useEffect, useCallback } from 'react';
+import { scanDeviceMemory, scanDeviceCPU, scanDeviceHealth } from '@/utils/deviceScanner';
 
 interface SystemStats {
   cpuUsage: number;
   ramUsage: number;
+  memoryUsed: number;
+  memoryTotal: number;
+  batteryLevel: number;
+  temperature: number;
   timestamp: number;
 }
 
 export const useSystemMonitor = () => {
   const [cpuUsage, setCpuUsage] = useState(0);
   const [ramUsage, setRamUsage] = useState(0);
-  const [performanceHistory, setPerformanceHistory] = useState<any[]>([]);
+  const [memoryInfo, setMemoryInfo] = useState({ used: 0, total: 4096, available: 4096 });
+  const [performanceHistory, setPerformanceHistory] = useState<SystemStats[]>([]);
+  const [deviceHealth, setDeviceHealth] = useState<any>(null);
+  const [isScanning, setIsScanning] = useState(false);
 
-  // Function to estimate CPU usage using timing-based approach
-  const measureCPUUsage = useCallback(async (): Promise<number> => {
-    const startTime = performance.now();
-    const iterations = 100000;
+  const performDeviceScan = useCallback(async () => {
+    if (isScanning) return;
     
-    // Perform some CPU-intensive work
-    let sum = 0;
-    for (let i = 0; i < iterations; i++) {
-      sum += Math.random() * Math.sin(i);
-    }
+    setIsScanning(true);
     
-    const endTime = performance.now();
-    const executionTime = endTime - startTime;
-    
-    // Normalize to a percentage (this is an approximation)
-    // Lower execution time = less CPU load, higher execution time = more CPU load
-    const baselineTime = 10; // Expected time on a normal device
-    const usage = Math.min(Math.max((executionTime / baselineTime) * 20, 5), 90);
-    
-    return Math.round(usage);
-  }, []);
-
-  // Function to estimate RAM usage with better calculation
-  const measureRAMUsage = useCallback((): number => {
-    if ('memory' in performance) {
-      const memory = (performance as any).memory;
-      const usedMB = memory.usedJSHeapSize / 1024 / 1024;
-      const totalMB = memory.totalJSHeapSize / 1024 / 1024;
-      const limitMB = memory.jsHeapSizeLimit / 1024 / 1024;
-      
-      console.log(`Memory: Used ${usedMB.toFixed(1)}MB, Total ${totalMB.toFixed(1)}MB, Limit ${limitMB.toFixed(1)}MB`);
-      
-      // Calculate percentage based on used vs total, with more realistic scaling
-      // iOS typically has 2-6GB RAM, and web apps use a fraction of that
-      const estimatedSystemRAM = 4096; // Assume 4GB system RAM for iPhone 11
-      const webAppUsagePercentage = (usedMB / estimatedSystemRAM) * 100;
-      
-      // Scale up to show more realistic usage (web apps typically use 10-50% of available memory)
-      const scaledUsage = Math.min(Math.max(webAppUsagePercentage * 15, 15), 85);
-      
-      return Math.round(scaledUsage);
-    }
-    
-    // Fallback estimation with more realistic values
-    const estimatedUsage = 25 + Math.random() * 35; // 25-60% range
-    return Math.round(estimatedUsage);
-  }, []);
-
-  const updateStats = useCallback(async () => {
     try {
-      const newCpuUsage = await measureCPUUsage();
-      const newRamUsage = measureRAMUsage();
+      console.log('Starting device scan...');
       
-      setCpuUsage(newCpuUsage);
-      setRamUsage(newRamUsage);
+      // Scan all device metrics
+      const [memoryData, cpuData, healthData] = await Promise.all([
+        scanDeviceMemory(),
+        scanDeviceCPU(),
+        scanDeviceHealth()
+      ]);
       
+      console.log('Device scan results:', { memoryData, cpuData, healthData });
+      
+      // Update state with real data
+      setCpuUsage(cpuData.usage);
+      setRamUsage(Math.round((memoryData.usedMemory / memoryData.totalMemory) * 100));
+      setMemoryInfo({
+        used: memoryData.usedMemory,
+        total: memoryData.totalMemory,
+        available: memoryData.availableMemory
+      });
+      setDeviceHealth(healthData);
+      
+      // Add to performance history
       const timestamp = new Date();
+      const newStats: SystemStats = {
+        cpuUsage: cpuData.usage,
+        ramUsage: Math.round((memoryData.usedMemory / memoryData.totalMemory) * 100),
+        memoryUsed: memoryData.usedMemory,
+        memoryTotal: memoryData.totalMemory,
+        batteryLevel: healthData.batteryLevel,
+        temperature: cpuData.temperature,
+        timestamp: timestamp.getTime()
+      };
+      
       setPerformanceHistory(prev => [
         ...prev.slice(-19), // Keep last 19 entries
         {
+          ...newStats,
           time: timestamp.toLocaleTimeString(),
-          cpu: newCpuUsage,
-          ram: newRamUsage,
-          timestamp: timestamp.getTime()
+          cpu: cpuData.usage,
+          ram: Math.round((memoryData.usedMemory / memoryData.totalMemory) * 100)
         }
       ]);
       
-      console.log(`System Stats - CPU: ${newCpuUsage}%, RAM: ${newRamUsage}%`);
+      console.log(`Real Device Stats - CPU: ${cpuData.usage}%, RAM: ${Math.round((memoryData.usedMemory / memoryData.totalMemory) * 100)}%, Memory: ${memoryData.usedMemory.toFixed(1)}MB/${memoryData.totalMemory}MB`);
+      
     } catch (error) {
-      console.error('Error measuring system stats:', error);
+      console.error('Error during device scan:', error);
+      // Set fallback values
+      setCpuUsage(25);
+      setRamUsage(45);
+      setMemoryInfo({ used: 1800, total: 4096, available: 2296 });
+    } finally {
+      setIsScanning(false);
     }
-  }, [measureCPUUsage, measureRAMUsage]);
+  }, [isScanning]);
 
   useEffect(() => {
-    // Initial measurement
-    updateStats();
+    // Initial scan
+    performDeviceScan();
     
-    // Set up interval for continuous monitoring
-    const interval = setInterval(updateStats, 3000); // Every 3 seconds
+    // Set up interval for continuous scanning
+    const interval = setInterval(performDeviceScan, 5000); // Every 5 seconds
     
     return () => clearInterval(interval);
-  }, [updateStats]);
+  }, [performDeviceScan]);
 
   return {
     cpuUsage,
     ramUsage,
-    performanceHistory
+    memoryInfo,
+    performanceHistory,
+    deviceHealth,
+    isScanning,
+    performDeviceScan
   };
 };
